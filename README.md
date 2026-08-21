@@ -47,6 +47,13 @@ Exit status is 1 if any error-level finding was reported, 2 if a file
 couldn't be read, 0 otherwise. Warning-level findings (currently just
 `trailing-whitespace`) are printed but don't affect the exit status.
 
+Pass `-` (or no arguments at all) to read from stdin instead of a file:
+
+```
+$ cat heroes.txt | go run . -
+<stdin>:4:1: error: duplicate-name: "alice" duplicates name on line 2
+```
+
 ## rules
 
 | rule | severity | meaning |

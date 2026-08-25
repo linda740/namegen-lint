@@ -54,6 +54,27 @@ $ cat heroes.txt | go run . -
 <stdin>:4:1: error: duplicate-name: "alice" duplicates name on line 2
 ```
 
+Pass `-json` to get findings as a JSON array on stdout instead of the
+line-oriented format, for feeding into CI tooling:
+
+```
+$ go run . -json heroes.txt
+[
+  {
+    "file": "heroes.txt",
+    "line": 4,
+    "col": 1,
+    "rule": "duplicate-name",
+    "severity": "error",
+    "message": "\"alice\" duplicates name on line 2"
+  },
+  ...
+]
+```
+
+The exit code rules are unchanged: 1 if any error-level finding was
+reported, 2 if a file couldn't be read, 0 otherwise.
+
 ## rules
 
 | rule | severity | meaning |

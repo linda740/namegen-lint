@@ -2,6 +2,7 @@ package lint
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -115,6 +116,35 @@ func TestLint(t *testing.T) {
 		{
 			name:  "whitespace-only line is blank, not an empty name",
 			input: "   \n",
+			want:  nil,
+		},
+		{
+			name:  "embedded control character",
+			input: "Ali\x07ce\n",
+			want: []Finding{
+				{Line: 1, Col: 1, Rule: "invalid-char", Severity: Error,
+					Message: `name contains invalid character '\a'`},
+			},
+		},
+		{
+			name:  "zero-width space is a format character, not visible whitespace",
+			input: "Ali" + string(rune(0x200b)) + "ce\n",
+			want: []Finding{
+				{Line: 1, Col: 1, Rule: "invalid-char", Severity: Error,
+					Message: "name contains invalid character " + strconv.QuoteRune(0x200b)},
+			},
+		},
+		{
+			name:  "name over the length limit",
+			input: strings.Repeat("a", 81) + "\n",
+			want: []Finding{
+				{Line: 1, Col: 1, Rule: "name-too-long", Severity: Warning,
+					Message: "name is 81 characters long, limit is 80"},
+			},
+		},
+		{
+			name:  "name at the length limit is fine",
+			input: strings.Repeat("a", 80) + "\n",
 			want:  nil,
 		},
 	}

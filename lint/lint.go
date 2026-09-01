@@ -9,7 +9,16 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
+
+// maxNameLength is the longest an entry name is allowed to be before
+// name-too-long fires. It's generous on purpose: legitimate multi-token
+// templates like "{first} {middle} {last}, {title}" run long, and this
+// rule exists to catch pasted-in garbage (a whole sentence, a stray
+// paragraph), not to police normal naming.
+const maxNameLength = 80
 
 // Severity ranks how serious a Finding is. Error means the entry will
 // misbehave at generation time (skipped, mis-weighted, or producing a
@@ -81,6 +90,20 @@ func Lint(r io.Reader) ([]Finding, error) {
 			continue
 		}
 
+		if ch, ok := firstInvalidChar(name); ok {
+			findings = append(findings, Finding{
+				Line: lineNum, Col: col, Rule: "invalid-char", Severity: Error,
+				Message: fmt.Sprintf("name contains invalid character %q", ch),
+			})
+		}
+
+		if n := utf8.RuneCountInString(name); n > maxNameLength {
+			findings = append(findings, Finding{
+				Line: lineNum, Col: col, Rule: "name-too-long", Severity: Warning,
+				Message: fmt.Sprintf("name is %d characters long, limit is %d", n, maxNameLength),
+			})
+		}
+
 		if bracesUnbalanced(name) {
 			findings = append(findings, Finding{
 				Line: lineNum, Col: col, Rule: "unbalanced-braces", Severity: Error,
@@ -144,6 +167,20 @@ func bracesUnbalanced(s string) bool {
 		}
 	}
 	return depth != 0
+}
+
+// firstInvalidChar returns the first rune in s that would corrupt the
+// generator's output rather than just look odd: an ASCII control
+// character, or a Unicode formatting character (zero-width joiners, a
+// byte-order mark, soft hyphens, and the like) that renders invisibly
+// and almost always got there by an accidental paste, not on purpose.
+func firstInvalidChar(s string) (rune, bool) {
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return r, true
+		}
+	}
+	return 0, false
 }
 
 // indexCol finds the 1-based column where name starts within raw. It

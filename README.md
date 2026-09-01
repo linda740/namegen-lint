@@ -83,6 +83,8 @@ reported, 2 if a file couldn't be read, 0 otherwise.
 | `empty-name` | error | entry has no name, e.g. a line that is just `:5` |
 | `invalid-weight` | error | the part after `:` isn't a positive integer |
 | `unbalanced-braces` | error | `{` and `}` in the entry don't match up |
+| `invalid-char` | error | name has a control character or invisible Unicode formatting character (BOM, zero-width space, and the like) |
+| `name-too-long` | warning | name is longer than 80 characters |
 | `trailing-whitespace` | warning | entry has leading or trailing whitespace |
 
 ## install

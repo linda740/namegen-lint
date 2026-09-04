@@ -77,7 +77,7 @@ reported, 2 if a file couldn't be read, 0 otherwise.
 
 ## rules
 
-| rule | severity | meaning |
+| rule | default severity | meaning |
 |---|---|---|
 | `duplicate-name` | error | same name (case-insensitive) appears more than once |
 | `empty-name` | error | entry has no name, e.g. a line that is just `:5` |
@@ -86,6 +86,26 @@ reported, 2 if a file couldn't be read, 0 otherwise.
 | `invalid-char` | error | name has a control character or invisible Unicode formatting character (BOM, zero-width space, and the like) |
 | `name-too-long` | warning | name is longer than 80 characters |
 | `trailing-whitespace` | warning | entry has leading or trailing whitespace |
+
+## config
+
+Pass `-config` with a path to a JSON file to override the default
+severity of specific rules, or turn them off. Keys are rule names from
+the table above; values are `"error"`, `"warning"`, or `"off"`. Rules
+left out keep their default severity.
+
+```
+$ cat namegen-lint.json
+{
+  "trailing-whitespace": "off",
+  "name-too-long": "error"
+}
+
+$ go run . -config namegen-lint.json heroes.txt
+```
+
+An unknown rule name or an unrecognized severity value in the config
+file is reported on stderr and exits 2 before any file is linted.
 
 ## install
 

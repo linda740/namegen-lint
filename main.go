@@ -25,11 +25,29 @@ type jsonFinding struct {
 
 func main() {
 	jsonOutput := flag.Bool("json", false, "report findings as a JSON array on stdout, for CI integration")
+	configPath := flag.String("config", "", "path to a JSON file overriding rule severities, e.g. {\"trailing-whitespace\": \"off\"}")
 	flag.Parse()
 
 	paths := flag.Args()
 	if len(paths) == 0 {
 		paths = []string{"-"}
+	}
+
+	var cfg lint.Config
+	if *configPath != "" {
+		data, err := os.ReadFile(*configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "reading config: %v\n", err)
+			os.Exit(2)
+		}
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "parsing config %s: %v\n", *configPath, err)
+			os.Exit(2)
+		}
+		if _, err := cfg.Apply(nil); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", *configPath, err)
+			os.Exit(2)
+		}
 	}
 
 	var jsonFindings []jsonFinding
@@ -58,6 +76,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", label, err)
 			exitCode = 2
 			continue
+		}
+		if cfg != nil {
+			findings, _ = cfg.Apply(findings) // already validated above
 		}
 
 		for _, fd := range findings {

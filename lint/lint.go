@@ -195,3 +195,74 @@ func indexCol(raw, name string) int {
 	}
 	return 1
 }
+
+// knownRules lists every rule name Lint can produce a Finding for.
+// Config checks its keys against this set so a typo'd rule name in a
+// config file fails loudly instead of being silently ignored.
+var knownRules = map[string]bool{
+	"duplicate-name":      true,
+	"empty-name":          true,
+	"invalid-weight":      true,
+	"unbalanced-braces":   true,
+	"invalid-char":        true,
+	"name-too-long":       true,
+	"trailing-whitespace": true,
+}
+
+// ParseSeverity parses the text form of a Severity, as it appears in
+// a config file or on the command line. It's the inverse of
+// Severity.String.
+func ParseSeverity(s string) (Severity, error) {
+	switch s {
+	case "error":
+		return Error, nil
+	case "warning":
+		return Warning, nil
+	default:
+		return 0, fmt.Errorf("unknown severity %q, want \"error\" or \"warning\"", s)
+	}
+}
+
+// Config overrides the default severity of specific rules, keyed by
+// rule name. A value of "off" drops that rule's findings entirely;
+// "error" or "warning" changes their severity. Rules left out of the
+// map keep the severity Lint gives them.
+type Config map[string]string
+
+// Apply filters and re-severities findings according to cfg,
+// returning a new slice; the input is left untouched. A non-nil error
+// means cfg itself is invalid — an unknown rule name or a severity
+// that isn't "error", "warning", or "off" — and the returned slice
+// should be discarded.
+func (cfg Config) Apply(findings []Finding) ([]Finding, error) {
+	if len(cfg) == 0 {
+		return findings, nil
+	}
+
+	overrides := make(map[string]Severity, len(cfg))
+	for rule, value := range cfg {
+		if !knownRules[rule] {
+			return nil, fmt.Errorf("config: unknown rule %q", rule)
+		}
+		if value == "off" {
+			continue
+		}
+		sev, err := ParseSeverity(value)
+		if err != nil {
+			return nil, fmt.Errorf("config: rule %q: %w", rule, err)
+		}
+		overrides[rule] = sev
+	}
+
+	out := make([]Finding, 0, len(findings))
+	for _, f := range findings {
+		if cfg[f.Rule] == "off" {
+			continue
+		}
+		if sev, ok := overrides[f.Rule]; ok {
+			f.Severity = sev
+		}
+		out = append(out, f)
+	}
+	return out, nil
+}

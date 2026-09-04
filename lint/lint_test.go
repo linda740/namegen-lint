@@ -161,3 +161,69 @@ func TestLint(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigApply(t *testing.T) {
+	base := []Finding{
+		{Line: 1, Col: 1, Rule: "trailing-whitespace", Severity: Warning, Message: "a"},
+		{Line: 2, Col: 1, Rule: "name-too-long", Severity: Warning, Message: "b"},
+		{Line: 3, Col: 1, Rule: "duplicate-name", Severity: Error, Message: "c"},
+	}
+
+	t.Run("empty config leaves findings untouched", func(t *testing.T) {
+		got, err := Config{}.Apply(base)
+		if err != nil {
+			t.Fatalf("Apply returned error: %v", err)
+		}
+		if !reflect.DeepEqual(got, base) {
+			t.Errorf("Apply(%v) = %v, want unchanged", base, got)
+		}
+	})
+
+	t.Run("off drops matching findings and leaves others alone", func(t *testing.T) {
+		got, err := Config{"trailing-whitespace": "off"}.Apply(base)
+		if err != nil {
+			t.Fatalf("Apply returned error: %v", err)
+		}
+		want := []Finding{base[1], base[2]}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Apply = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("severity override changes only the named rule", func(t *testing.T) {
+		got, err := Config{"name-too-long": "error"}.Apply(base)
+		if err != nil {
+			t.Fatalf("Apply returned error: %v", err)
+		}
+		if got[1].Severity != Error {
+			t.Errorf("name-too-long severity = %v, want Error", got[1].Severity)
+		}
+		if got[0].Severity != Warning || got[2].Severity != Error {
+			t.Errorf("unrelated findings changed: %v", got)
+		}
+	})
+
+	t.Run("unknown rule name is an error", func(t *testing.T) {
+		_, err := Config{"not-a-real-rule": "off"}.Apply(base)
+		if err == nil {
+			t.Fatal("Apply with unknown rule name returned no error")
+		}
+	})
+
+	t.Run("unrecognized severity value is an error", func(t *testing.T) {
+		_, err := Config{"name-too-long": "critical"}.Apply(base)
+		if err == nil {
+			t.Fatal("Apply with bad severity value returned no error")
+		}
+	})
+
+	t.Run("input slice is not mutated", func(t *testing.T) {
+		input := []Finding{{Line: 1, Col: 1, Rule: "name-too-long", Severity: Warning, Message: "x"}}
+		if _, err := (Config{"name-too-long": "error"}).Apply(input); err != nil {
+			t.Fatalf("Apply returned error: %v", err)
+		}
+		if input[0].Severity != Warning {
+			t.Errorf("Apply mutated its input: %v", input)
+		}
+	})
+}

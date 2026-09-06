@@ -51,13 +51,131 @@ func (f Finding) String() string {
 	return fmt.Sprintf("%d:%d: %s: %s: %s", f.Line, f.Col, f.Severity, f.Rule, f.Message)
 }
 
+// Entry is a single non-blank, non-comment line, parsed into the
+// pieces a Rule needs. Col is the 1-based column where Name starts
+// within Raw.
+type Entry struct {
+	Line      int
+	Raw       string
+	Trimmed   string
+	Name      string
+	WeightStr string
+	HasWeight bool
+	Col       int
+}
+
+// Rule inspects an Entry and returns any Findings it produces there.
+// Rules that need to remember something across entries, the way
+// duplicate-name remembers every name it has seen, hold that state on
+// the Rule value itself; Lint builds a fresh set of rules on every
+// call so state never leaks between files.
+//
+// Rules only ever see entries with a non-empty Name: a line with no
+// name is reported as empty-name and nothing else runs against it,
+// since checks like duplicate-name would otherwise treat repeated
+// blank entries as duplicates of each other.
+type Rule interface {
+	Check(e Entry) []Finding
+}
+
+// defaultRules returns the rules Lint runs against every entry, in
+// the order their findings should appear when more than one fires on
+// the same line.
+func defaultRules() []Rule {
+	return []Rule{
+		invalidCharRule{},
+		nameTooLongRule{},
+		unbalancedBracesRule{},
+		newDuplicateNameRule(),
+		invalidWeightRule{},
+	}
+}
+
+type invalidCharRule struct{}
+
+func (invalidCharRule) Check(e Entry) []Finding {
+	ch, ok := firstInvalidChar(e.Name)
+	if !ok {
+		return nil
+	}
+	return []Finding{{
+		Line: e.Line, Col: e.Col, Rule: "invalid-char", Severity: Error,
+		Message: fmt.Sprintf("name contains invalid character %q", ch),
+	}}
+}
+
+type nameTooLongRule struct{}
+
+func (nameTooLongRule) Check(e Entry) []Finding {
+	n := utf8.RuneCountInString(e.Name)
+	if n <= maxNameLength {
+		return nil
+	}
+	return []Finding{{
+		Line: e.Line, Col: e.Col, Rule: "name-too-long", Severity: Warning,
+		Message: fmt.Sprintf("name is %d characters long, limit is %d", n, maxNameLength),
+	}}
+}
+
+type unbalancedBracesRule struct{}
+
+func (unbalancedBracesRule) Check(e Entry) []Finding {
+	if !bracesUnbalanced(e.Name) {
+		return nil
+	}
+	return []Finding{{
+		Line: e.Line, Col: e.Col, Rule: "unbalanced-braces", Severity: Error,
+		Message: fmt.Sprintf("template placeholders are unbalanced (%q)", e.Name),
+	}}
+}
+
+// duplicateNameRule flags a name that has already appeared earlier in
+// the same file, comparing case-insensitively. seen maps a normalized
+// name to the line it first appeared on.
+type duplicateNameRule struct {
+	seen map[string]int
+}
+
+func newDuplicateNameRule() *duplicateNameRule {
+	return &duplicateNameRule{seen: make(map[string]int)}
+}
+
+func (r *duplicateNameRule) Check(e Entry) []Finding {
+	norm := strings.ToLower(e.Name)
+	firstLine, ok := r.seen[norm]
+	if !ok {
+		r.seen[norm] = e.Line
+		return nil
+	}
+	return []Finding{{
+		Line: e.Line, Col: e.Col, Rule: "duplicate-name", Severity: Error,
+		Message: fmt.Sprintf("%q duplicates name on line %d", e.Name, firstLine),
+	}}
+}
+
+type invalidWeightRule struct{}
+
+func (invalidWeightRule) Check(e Entry) []Finding {
+	if !e.HasWeight {
+		return nil
+	}
+	n, err := strconv.Atoi(e.WeightStr)
+	if err == nil && n >= 1 {
+		return nil
+	}
+	return []Finding{{
+		Line: e.Line, Col: e.Col, Rule: "invalid-weight", Severity: Error,
+		Message: fmt.Sprintf("weight %q is not a positive integer", e.WeightStr),
+	}}
+}
+
 // Lint reads a name-list file from r and returns every finding, in the
 // order the offending lines appear. A non-nil error means r itself
 // could not be read; malformed content is reported as findings, not
 // errors.
 func Lint(r io.Reader) ([]Finding, error) {
 	var findings []Finding
-	seen := make(map[string]int) // normalized name -> first line it appeared on
+	rules := defaultRules()
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -80,55 +198,22 @@ func Lint(r io.Reader) ([]Finding, error) {
 		}
 
 		name, weightStr, hasWeight := splitEntry(trimmed)
-		col := indexCol(raw, name)
+		entry := Entry{
+			Line: lineNum, Raw: raw, Trimmed: trimmed,
+			Name: name, WeightStr: weightStr, HasWeight: hasWeight,
+			Col: indexCol(raw, name),
+		}
 
 		if name == "" {
 			findings = append(findings, Finding{
-				Line: lineNum, Col: col, Rule: "empty-name", Severity: Error,
+				Line: lineNum, Col: entry.Col, Rule: "empty-name", Severity: Error,
 				Message: "entry has no name",
 			})
 			continue
 		}
 
-		if ch, ok := firstInvalidChar(name); ok {
-			findings = append(findings, Finding{
-				Line: lineNum, Col: col, Rule: "invalid-char", Severity: Error,
-				Message: fmt.Sprintf("name contains invalid character %q", ch),
-			})
-		}
-
-		if n := utf8.RuneCountInString(name); n > maxNameLength {
-			findings = append(findings, Finding{
-				Line: lineNum, Col: col, Rule: "name-too-long", Severity: Warning,
-				Message: fmt.Sprintf("name is %d characters long, limit is %d", n, maxNameLength),
-			})
-		}
-
-		if bracesUnbalanced(name) {
-			findings = append(findings, Finding{
-				Line: lineNum, Col: col, Rule: "unbalanced-braces", Severity: Error,
-				Message: fmt.Sprintf("template placeholders are unbalanced (%q)", name),
-			})
-		}
-
-		norm := strings.ToLower(name)
-		if firstLine, ok := seen[norm]; ok {
-			findings = append(findings, Finding{
-				Line: lineNum, Col: col, Rule: "duplicate-name", Severity: Error,
-				Message: fmt.Sprintf("%q duplicates name on line %d", name, firstLine),
-			})
-		} else {
-			seen[norm] = lineNum
-		}
-
-		if hasWeight {
-			n, err := strconv.Atoi(weightStr)
-			if err != nil || n < 1 {
-				findings = append(findings, Finding{
-					Line: lineNum, Col: col, Rule: "invalid-weight", Severity: Error,
-					Message: fmt.Sprintf("weight %q is not a positive integer", weightStr),
-				})
-			}
+		for _, rule := range rules {
+			findings = append(findings, rule.Check(entry)...)
 		}
 	}
 

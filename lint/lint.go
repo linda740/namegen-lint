@@ -281,6 +281,54 @@ func indexCol(raw, name string) int {
 	return 1
 }
 
+// Fix strips the leading and trailing whitespace that would otherwise
+// trigger trailing-whitespace, returning the corrected file content and
+// whether anything changed. It leaves blank lines and comment lines
+// alone, and preserves each line's own ending (bare "\n" or "\r\n") and
+// whether the file ends with a trailing newline at all, so a fix never
+// touches more of the file than the rule it's fixing would have
+// flagged.
+func Fix(data []byte) ([]byte, bool) {
+	text := string(data)
+	hadTrailingNewline := strings.HasSuffix(text, "\n")
+	lines := strings.Split(text, "\n")
+	if hadTrailingNewline {
+		lines = lines[:len(lines)-1]
+	}
+
+	changed := false
+	for i, line := range lines {
+		hasCR := strings.HasSuffix(line, "\r")
+		content := line
+		if hasCR {
+			content = strings.TrimSuffix(line, "\r")
+		}
+
+		trimmed := strings.TrimSpace(content)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if trimmed == content {
+			continue
+		}
+
+		if hasCR {
+			trimmed += "\r"
+		}
+		lines[i] = trimmed
+		changed = true
+	}
+
+	if !changed {
+		return data, false
+	}
+	out := strings.Join(lines, "\n")
+	if hadTrailingNewline {
+		out += "\n"
+	}
+	return []byte(out), true
+}
+
 // knownRules lists every rule name Lint can produce a Finding for.
 // Config checks its keys against this set so a typo'd rule name in a
 // config file fails loudly instead of being silently ignored.

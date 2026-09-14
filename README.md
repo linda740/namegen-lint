@@ -107,6 +107,22 @@ $ go run . -config namegen-lint.json heroes.txt
 An unknown rule name or an unrecognized severity value in the config
 file is reported on stderr and exits 2 before any file is linted.
 
+## fixing
+
+Pass `-fix` to rewrite files in place, stripping the leading and
+trailing whitespace that `trailing-whitespace` would otherwise flag.
+Comment and blank lines are left alone, and each file keeps its own
+line-ending style. The file is fixed before linting, so the report
+that follows only shows what `-fix` couldn't handle:
+
+```
+$ go run . -fix heroes.txt
+heroes.txt:4:1: error: duplicate-name: "alice" duplicates name on line 2
+```
+
+`-fix` can't be used with stdin (`-` or no path given), since there's
+nothing to write the fixed content back to.
+
 ## install
 
 ```

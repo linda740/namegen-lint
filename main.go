@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -26,6 +27,7 @@ type jsonFinding struct {
 func main() {
 	jsonOutput := flag.Bool("json", false, "report findings as a JSON array on stdout, for CI integration")
 	configPath := flag.String("config", "", "path to a JSON file overriding rule severities, e.g. {\"trailing-whitespace\": \"off\"}")
+	fix := flag.Bool("fix", false, "rewrite files in place, stripping whitespace that trailing-whitespace would flag, before linting")
 	flag.Parse()
 
 	paths := flag.Args()
@@ -56,8 +58,35 @@ func main() {
 		label := path
 		var f io.ReadCloser
 		if path == "-" {
+			if *fix {
+				fmt.Fprintln(os.Stderr, "-fix cannot be used with stdin")
+				exitCode = 2
+				continue
+			}
 			label = "<stdin>"
 			f = os.Stdin
+		} else if *fix {
+			info, err := os.Stat(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
+				exitCode = 2
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
+				exitCode = 2
+				continue
+			}
+			fixed, changed := lint.Fix(data)
+			if changed {
+				if err := os.WriteFile(path, fixed, info.Mode()); err != nil {
+					fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
+					exitCode = 2
+					continue
+				}
+			}
+			f = io.NopCloser(bytes.NewReader(fixed))
 		} else {
 			opened, err := os.Open(path)
 			if err != nil {

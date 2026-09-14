@@ -162,6 +162,83 @@ func TestLint(t *testing.T) {
 	}
 }
 
+func TestFix(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     string
+		want      string
+		wantFixed bool
+	}{
+		{
+			name:      "leading and trailing spaces are stripped",
+			input:     "  Alice  \nBob\n",
+			want:      "Alice\nBob\n",
+			wantFixed: true,
+		},
+		{
+			name:      "nothing to fix",
+			input:     "Alice\nBob:3\n",
+			want:      "Alice\nBob:3\n",
+			wantFixed: false,
+		},
+		{
+			name:      "comment lines are left alone even with trailing whitespace",
+			input:     "# a comment  \nAlice\n",
+			want:      "# a comment  \nAlice\n",
+			wantFixed: false,
+		},
+		{
+			name:      "blank lines are left alone",
+			input:     "Alice\n   \nBob\n",
+			want:      "Alice\n   \nBob\n",
+			wantFixed: false,
+		},
+		{
+			name:      "CRLF line endings are preserved",
+			input:     "  Alice  \r\nBob\r\n",
+			want:      "Alice\r\nBob\r\n",
+			wantFixed: true,
+		},
+		{
+			name:      "missing final newline is preserved",
+			input:     "  Alice  ",
+			want:      "Alice",
+			wantFixed: true,
+		},
+		{
+			name:      "empty input",
+			input:     "",
+			want:      "",
+			wantFixed: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, changed := Fix([]byte(tc.input))
+			if changed != tc.wantFixed {
+				t.Errorf("Fix(%q) changed = %v, want %v", tc.input, changed, tc.wantFixed)
+			}
+			if string(got) != tc.want {
+				t.Errorf("Fix(%q) =\n  %q\nwant\n  %q", tc.input, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("output is clean under Lint", func(t *testing.T) {
+		fixed, _ := Fix([]byte("  Alice  \n  Bob  \n"))
+		findings, err := Lint(strings.NewReader(string(fixed)))
+		if err != nil {
+			t.Fatalf("Lint returned error: %v", err)
+		}
+		for _, f := range findings {
+			if f.Rule == "trailing-whitespace" {
+				t.Errorf("Fix output still has trailing-whitespace finding: %v", f)
+			}
+		}
+	})
+}
+
 func TestConfigApply(t *testing.T) {
 	base := []Finding{
 		{Line: 1, Col: 1, Rule: "trailing-whitespace", Severity: Warning, Message: "a"},

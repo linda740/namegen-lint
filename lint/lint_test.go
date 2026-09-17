@@ -67,6 +67,22 @@ func TestLint(t *testing.T) {
 			},
 		},
 		{
+			name:  "decimal weight gets a message explaining why",
+			input: "Grace:1.5\n",
+			want: []Finding{
+				{Line: 1, Col: 1, Rule: "invalid-weight", Severity: Error,
+					Message: `weight "1.5" is not a positive integer (decimal weights aren't supported, use a whole number)`},
+			},
+		},
+		{
+			name:  "negative weight is not mistaken for a decimal",
+			input: "Heidi:-1\n",
+			want: []Finding{
+				{Line: 1, Col: 1, Rule: "invalid-weight", Severity: Error,
+					Message: `weight "-1" is not a positive integer`},
+			},
+		},
+		{
 			name:  "extra colon makes the weight field unparseable",
 			input: "Gina:2:3\n",
 			want: []Finding{

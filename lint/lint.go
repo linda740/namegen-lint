@@ -163,9 +163,19 @@ func (invalidWeightRule) Check(e Entry) []Finding {
 	if err == nil && n >= 1 {
 		return nil
 	}
+	msg := fmt.Sprintf("weight %q is not a positive integer", e.WeightStr)
+	// A decimal like "1.5" is a common mistake, not just noise: someone
+	// modeled odds as a fraction and never noticed weights round down to
+	// whole numbers. Atoi's generic message doesn't say why "1.5" is
+	// wrong, so give the decimal case its own text.
+	if strings.Contains(e.WeightStr, ".") {
+		if _, ferr := strconv.ParseFloat(e.WeightStr, 64); ferr == nil {
+			msg = fmt.Sprintf("weight %q is not a positive integer (decimal weights aren't supported, use a whole number)", e.WeightStr)
+		}
+	}
 	return []Finding{{
 		Line: e.Line, Col: e.Col, Rule: "invalid-weight", Severity: Error,
-		Message: fmt.Sprintf("weight %q is not a positive integer", e.WeightStr),
+		Message: msg,
 	}}
 }
 

@@ -21,6 +21,7 @@ func FuzzLint(f *testing.F) {
 		"Name:\n",
 		"Name:-1\n",
 		"Name:2:3\n",
+		"Name:1.5\n",
 		":5\n",
 		"{first} {last}\n",
 		"{first\n",
